@@ -25,6 +25,7 @@ public class ThreadPoolConfig {
                 TimeUnit.MINUTES,
                 new ArrayBlockingQueue<>(100),
                 Executors.defaultThreadFactory(),
+                //自定义拒绝策略
                 (runnable, executor) -> {
                     System.out.println(" 线程池达到了最大饱和... ");
                     try {
