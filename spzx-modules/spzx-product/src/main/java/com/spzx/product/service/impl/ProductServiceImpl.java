@@ -228,12 +228,22 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         productMapper.updateById(product);
     }
 
+    @Transactional(rollbackFor = Exception.class)
     @Override
     public void updateStatus(Long id, Integer status) {
+
         Product product = new Product();
         product.setId(id);
         if (status == 1) {
             product.setStatus(1);
+
+            //商品上架时将数据添加到Bitmap
+            String key = "sku:product:data";
+            List<ProductSku> productSkuList = productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>().eq(ProductSku::getProductId,id));
+            productSkuList.forEach(productSku -> {
+                redisTemplate.opsForValue().setBit(key,productSku.getId(),true);
+            });
+
         } else {
             product.setStatus(-1);
         }
