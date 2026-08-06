@@ -148,7 +148,7 @@ public class ProductController extends BaseController {
     @Operation(summary = "获取商品sku信息")
     @InnerAuth
     @GetMapping(value = "/getProductSku/{skuId}")
-    public R<ProductSku> getProductSku(@PathVariable("skuId") Long skuId) {
+    public R<ProductSku> getProductSku(@PathVariable("skuId") Long skuId) throws InterruptedException {
         return R.ok(productService.getProductSku(skuId));
     }
 

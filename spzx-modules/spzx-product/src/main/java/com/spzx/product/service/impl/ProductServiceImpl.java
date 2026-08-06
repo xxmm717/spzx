@@ -19,11 +19,13 @@ import com.spzx.product.service.IProductService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -133,9 +135,23 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
         return product;
     }
 
-
+    @Transactional
     @Override
     public int updateProduct(Product product) {
+
+        /*
+        * 因为业务数据更新等原因，对于mysql中商品原数据进行了修改，将导致redis中缓存数据和mysql中原始数据不一致的问题，这里可以使用
+        * 延迟双删来保证缓存与数据库数据一致性！
+        */
+
+        // 一、删除缓存
+        List<Long> skuIdList = product.getProductSkuList().stream().map(ProductSku::getId).collect(Collectors.toList());
+        skuIdList.forEach(skuId -> {
+            String dateKey = "product:sku:" + skuId;
+            this.redisTemplate.delete(dateKey);
+        });
+
+        // 二、执行业务代码
         //1.更新Product
         productMapper.updateById(product);
 
@@ -159,6 +175,19 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
                 .selectOne(new LambdaQueryWrapper<ProductDetails>().eq(ProductDetails::getProductId, product.getId()));
         productDetails.setImageUrls(String.join(",", product.getDetailsImageUrlList()));
         productDetailsMapper.updateById(productDetails);
+
+        // 三、休眠一段时间
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+
+        // 四、再次执行操作删除缓存
+        skuIdList.forEach(skuId -> {
+            String dateKey = "product:sku:" + skuId;
+            this.redisTemplate.delete(dateKey);
+        });
 
         return 1;
     }
@@ -227,11 +256,71 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     /**
      * 服务提供者：6个接口来服务于商品详情查询。需要进行优化，提供查询效率。
      * 需要使用redis来提高性能。
+     * 根据SkuID查询SKU商品信息
+     * @param skuId
+     * @return
      */
 
     @Override
-    public ProductSku getProductSku(Long skuId) {
-        return productSkuMapper.selectById(skuId);
+    public ProductSku getProductSku(Long skuId) throws InterruptedException {
+//        return productSkuMapper.selectById(skuId);
+        try {
+            // 1 优先从缓存中查询
+            // 1.1 构建业务数据 key形式：前缀+业务唯一标识
+            String dataKey = "product:Sku:" + skuId;
+            // 1.2 查询redis业务数据
+            ProductSku productSku = (ProductSku) redisTemplate.opsForValue().get(dataKey);
+            // 1.3 命中缓存直接返回
+            if (redisTemplate.hasKey(dataKey)) {
+                log.info("命中缓存，直接返回，线程ID：{}，线程名称：{}", Thread.currentThread().getId(), Thread.currentThread().getName());
+                return productSku;
+            }
+
+            // 2.尝试获取分布式锁（set k v ex nx可能获取锁失败）
+            // 2.1 构建锁key
+            String lockKey = "product:Sku:lock:" + skuId;
+            // 2.2 采用UUID作为线程标识
+            String localUUID =  UUID.randomUUID().toString().replaceAll("-", "");
+            // 2.3 利用Redis提供set nx ex 获取分布式锁
+            Boolean flag = redisTemplate.opsForValue().setIfAbsent(lockKey, localUUID,5, TimeUnit.SECONDS);
+
+            if (flag) {
+                //3.获取锁成功执行业务,将查询业务数据放入缓存Redis
+                log.info("获取锁成功：{}，线程名称：{}", Thread.currentThread().getId(), Thread.currentThread().getName());
+                try {
+                    productSku = productSkuMapper.selectById(skuId);
+                    log.info("获取锁成功：{}，线程名称：{}", Thread.currentThread().getId(), Thread.currentThread().getName());
+                    long ttl =  productSku == null ? 1 * 60 : 10 * 60;
+                    redisTemplate.opsForValue().set(dataKey, ttl, ttl, TimeUnit.SECONDS);
+                    return productSku;
+                } finally {
+                    //4.业务执行完毕释放锁
+                    String scriptText = "if redis.call(\"get\",KEYS[1]) == ARGV[1]\n" +
+                            "then\n" +
+                            "    return redis.call(\"del\",KEYS[1])\n" +
+                            "else\n" +
+                            "    return 0\n" +
+                            "end";
+                    DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>();
+                    redisScript.setScriptText(scriptText);
+                    redisScript.setResultType(Long.class);
+                    redisTemplate.execute(redisScript,Arrays.asList(lockKey),localUUID);
+
+                }
+            }else {
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                log.error("获取锁失败，自旋：{}，线程名称：{}", Thread.currentThread().getId(), Thread.currentThread().getName());
+                return productSkuMapper.selectById(skuId);
+            }
+        } catch (RuntimeException e) {
+            //兜底处理方案：Redis服务有问题，将业务数据获取自动从数据库获取
+            log.error("[商品服务]查询商品信息异常：{}", e);
+            return productSkuMapper.selectById(skuId);
+        }
     }
 
 

@@ -84,7 +84,7 @@ public interface IProductService extends IService<Product> {
 
 
     //----详情 start------------------------------
-    ProductSku getProductSku(Long skuId);
+    ProductSku getProductSku(Long skuId) throws InterruptedException;
 
     Product getProduct(Long id);
 
