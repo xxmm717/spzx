@@ -41,7 +41,7 @@ public class  SpzxProductApplication implements CommandLineRunner {
     //商品功能
     @Override
     public void run(String...args) throws Exception{
-        String key = "sku:porduct:data";
+        String key = "sku:product:data";
         //查询商品的skuid
         List<ProductSku> productSkuList = productSkuMapper.selectList(null);
         productSkuList.forEach(productSku -> {

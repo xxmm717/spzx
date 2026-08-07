@@ -61,7 +61,7 @@ public interface RemoteProductService {
 
 
     /**
-     * 批量获取商品sku最新价格信
+     * 获取商品价格列表
      *
      * @param skuIdList
      * @param source

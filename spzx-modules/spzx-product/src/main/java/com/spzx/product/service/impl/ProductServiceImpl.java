@@ -379,22 +379,12 @@ public class ProductServiceImpl extends ServiceImpl<ProductMapper, Product> impl
     // select id,sale_price,market_price from product_sku where id in (1,2,3)
     @Override
     public List<SkuPrice> getSkuPriceList(List<Long> skuIdList) {
-        if (CollectionUtils.isEmpty(skuIdList)) {
-            return new ArrayList<SkuPrice>();
-        }
-        List<ProductSku> skuList = productSkuMapper
-                .selectList(new LambdaQueryWrapper<ProductSku>().in(ProductSku::getId, skuIdList)
-                        .select(ProductSku::getId, ProductSku::getSalePrice, ProductSku::getMarketPrice));
-        if (CollectionUtils.isEmpty(skuList)) {
-            return new ArrayList<SkuPrice>();
-        }
-        return skuList.stream().map((sku) -> {
+        List<ProductSku> productSkuList = productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>().in(ProductSku::getId, skuIdList).select(ProductSku::getId, ProductSku::getSalePrice));
+        return productSkuList.stream().map(item -> {
             SkuPrice skuPrice = new SkuPrice();
-            skuPrice.setSkuId(sku.getId());
-            skuPrice.setSalePrice(sku.getSalePrice());
-            skuPrice.setMarketPrice(sku.getMarketPrice());
+            skuPrice.setSkuId(item.getId());
+            skuPrice.setSalePrice(item.getSalePrice());
             return skuPrice;
-        }).toList();
+        }).collect(Collectors.toList());
     }
-
 }

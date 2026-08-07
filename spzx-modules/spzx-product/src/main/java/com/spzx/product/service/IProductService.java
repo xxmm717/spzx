@@ -97,5 +97,6 @@ public interface IProductService extends IService<Product> {
     SkuStockVo getSkuStock(Long skuId);
     //----详情 end------------------------------
 
+    //获取商品价格列表
     public List<SkuPrice> getSkuPriceList(List<Long> skuIdList);
 }
