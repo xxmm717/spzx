@@ -123,4 +123,58 @@ public class CartServiceImpl implements ICartService {
         }
         return new ArrayList<>();
     }
+
+    @Override
+    public void deleteCart(Long skuId) {
+        // 获取当前登录用户的id
+        Long userId = SecurityContextHolder.getUserId();
+        String cartKey = getCartKey(userId);
+        //获取缓存对象
+        BoundHashOperations<String, String, CartInfo> hashOperations = redisTemplate.boundHashOps(cartKey);
+        hashOperations.delete(skuId.toString());
+    }
+
+    @Override
+    public void checkCart(Long skuId, Integer isChecked) {
+        // 获取当前登录用户的id
+        Long userId = SecurityContextHolder.getUserId();
+        // 修改缓存
+        String cartKey = this.getCartKey(userId);
+        BoundHashOperations<String, String, CartInfo> hashOperations = redisTemplate.boundHashOps(cartKey);
+        // 先获取用户选择的商品
+        if (hashOperations.hasKey(skuId.toString())) {
+            CartInfo cartInfoUpd = hashOperations.get(skuId.toString());
+            // cartInfoUpd 写会缓存
+            cartInfoUpd.setIsChecked(isChecked);
+            // 更新缓存
+            hashOperations.put(skuId.toString(), cartInfoUpd);
+        }
+    }
+
+    @Override
+    public void allCheckCart(Integer isChecked) {
+        // 获取当前登录用户的id
+        Long userId = SecurityContextHolder.getUserId();
+        String cartKey = getCartKey(userId);
+        BoundHashOperations<String, String, CartInfo> hashOperations = redisTemplate.boundHashOps(cartKey);
+        List<CartInfo> cartInfoList = hashOperations.values();
+
+        //redisTemplate.opsForHash().values(cartKey);
+        cartInfoList.forEach(item -> {
+            CartInfo cartInfoUpd = hashOperations.get(item.getSkuId().toString());
+            cartInfoUpd.setIsChecked(isChecked);
+
+            // 更新缓存
+            hashOperations.put(item.getSkuId().toString(), cartInfoUpd);
+        });
+    }
+
+    @Override
+    public void clearCart() {
+        // 获取当前登录用户的id
+        Long userId = SecurityContextHolder.getUserId();
+        String cartKey = getCartKey(userId);
+        //获取缓存对象
+        redisTemplate.delete(cartKey);
+    }
 }
